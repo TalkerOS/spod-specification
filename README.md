@@ -3,7 +3,7 @@
 _SPOD_ is a recursive backronym for **Spod Protocol and Option Discovery**, where the
 original meaning of "spod" is [given by Wiktionary.org][wiktionary-spod] as:
 
-> (1) One who uses talkers, an early form of chat room.
+> (1) One who uses talkers, an early form of chat room.  
 > (2) One who wastes time on nonproductive activities online.
 
 [wiktionary-spod]: https://en.wiktionary.org/wiki/spod
@@ -81,14 +81,14 @@ one of the following:
 
 1. A non-qualified, "friendly" name, e.g. "coolchat",
    _and_ a (possibly pre-configured) SPOD directory domain, e.g. `_spod.example.com`
-2. Or a fully-qualified domain name, e.g. `coolchat.otherdomain.example`
+2. Or a fully-qualified domain name, e.g. `coolchat.other.example.org`
 
 A hypothetical command-line client, `spod`, might support initiating a connection
 in any of three ways:
 
     $ spod coolchat                                # using a default directory domain
     $ spod coolchat --directory _spod.example.com  # search within a given domain
-    $ spod coolchat.otherdomain.example.org        # direct FQDN
+    $ spod coolchat.other.example.org              # direct FQDN
 
 The client would then use DNS to determine the protocol and port number required to
 connect.  Clients SHOULD automatically prefer more secure protocols over any legacy
@@ -118,7 +118,7 @@ usually over TCP or UDP with at least one associated port number.
 ### Directory
 
 A _directory_ exists to index and assist the discovery of _services_ and inform
-clients of the necessary details to successfully connect to such services.  Such a
+clients of the necessary details to successfully connect to such services.  A
 directory that is compliant with this specification is referred to as a _SPOD directory_.
 
 A directory is not assumed to itself run or host any of the services it lists, though
@@ -160,11 +160,11 @@ without requiring the user to know a service's fully-qualified domain name (FQDN
 It does require the user to know the directory domain FQDN or, more likely, a domain
 pre-configured by default in a given client implementation.
 
-A DNS domain or zone MUST opt-in to participating as a SPOD _directory domain_
-through the presence of a _Directory Domain record_ (see below).  Clients MUST
-query for the domain record prior to issuing any other SPOD-related DNS requests,
-and clients MUST NOT issue further DNS requests for SPOD records against that
-domain if a valid _Directory Domain record_ is not present.
+A DNS domain or zone MAY opt-in to participating as a SPOD _directory domain_
+by self-publishing a _directory domain record_ (see below).  Clients MUST
+query for the _directory domain_ record prior to issuing any other SPOD-related
+DNS requests, and clients MUST NOT issue further DNS requests for SPOD records
+against that domain if a valid _directory domain record_ is not present.
 
 
 ### SPOD DNS records
@@ -181,8 +181,8 @@ whitespace.  Each key-value pair consists of an alphanumeric key, followed by th
 equals(=) symbol, followed by the value.
 
 TXT records acting as _SPOD version 1_ records under this specification MUST begin
-with the version key-pair `v=spod1`.  Any TXT record that does not meet this
-requirement MUST be ignored as if it did not exist.
+with the version key-pair `v=spod1`.  Any TXT record encountered that does not meet
+this requirement MUST be ignored as if it did not exist.
 
 
 #### Directory Domain record
@@ -207,19 +207,19 @@ it as such.  (See the next section instead.)
 
 #### Directory Domain Hint record
 
-A SPOD TXT record where the `d` key's FQDN value and the record's own FQDN _differ_
-is considered to be a _directory domain hint_.  For example, if the second-level domain
-(SLD) `example.com` wanted to advertise it hosts a SPOD directory domain (but doesn't
-use the SLD itself as the root of the directory) then it can host a domain hint record
-that "points to" the canonical directory domain:
+A SPOD TXT record where the `d` key is present but it's FQDN value _differs_ from
+the record's own FQDN is considered to be a _directory domain hint_.  For example,
+if the second-level domain (SLD) `example.com` wanted to advertise it hosts a SPOD
+directory domain (but doesn't use the SLD itself as the root of the directory) then
+it MAY host a domain hint record that "points to" the canonical directory domain:
 
     example.com.  TXT  "v=spod1; d=_spod.example.com"
 
-A client that is configured to use `example.com` as its SPOD directory can use this
+A client that is configured to use `example.com` as its SPOD directory MAY use this
 record to discover the _canonical_ directory (sub)domain.  After retrieving this
 record, a client SHOULD query for a SPOD TXT record at the FQDN indicated by the
-`d` key.  If no valid record is found, this is a "dead" hint and MUST be ignored as
-if no such directory or hint exists.
+`d` key.  If no valid record is found then this is a "dead" hint and MUST be
+ignored as if no such directory or hint exists.
 
 If a valid SPOD TXT record exists, and it is a valid _directory domain record_ (see
 prior section), then the _canonical_ directory domain has been found and it can be
@@ -257,14 +257,16 @@ The SVCB record(s), for the example "coolchat" directory entry, may look somethi
 
 The above records indicate that "coolchat" supports _both_ the secure SSH protocol
 _and_ the legacy Telnet protocol.  Each record also provides the host FQDN and TCP port
-number on which the service offers the respective protocols.  The service priority field,
+number on which the service offers the respective protocols.  In most cases the target
+FQDN for all supported protocols will be the same for a given service, but a service MAY
+use different target FQDNs for different protocol offerings.  The service priority field,
 in this example, indicates that SSH is preferred because it has the lower value.
 
 This directory specification is protocol agnostic.  Compliant directories MUST include
-the `alpn` value (application protocol name) in SVCB records; there is no default or
+the `alpn` value (application layer protocol name) in SVCB records; there is no default or
 implied protocol.  Directories MUST include a `port` value in SVCB records when a service
 is offered on a port that is _different than the default port_ for the specified protocol
-name.  Directories MAY choose to always provide the port number information.  The transport
+name.  Directories MAY elect to always provide the port number information.  The transport
 protocol (i.e. TCP vs UDP) SHALL be determined based on the `alpn` value; if an application
 protocol supports _both_ TCP and UDP -- such as is the case with DNS -- then this
 specification is not opinionated.  Clients SHOULD defer to other conventions or standards
@@ -286,8 +288,9 @@ by that client.
 Directories MUST NOT publish new or updated SVCB records that target FQDNs that do not
 resolve to _publicly routable_ address records.  Directories MAY target FQDNs that are
 CNAME records as long as such records can be resolved to one or more `A` and/or `AAAA`
-record(s).  Directories SHOULD periodically revisit their SVCB records and remove those
-whose target FQDNs no longer resolve to valid addresses.
+record(s) that otherwise meet the requirements.  Directories SHOULD periodically
+revisit their SVCB records and remove those whose target FQDNs no longer resolve to
+valid addresses.
 
 Directory Domains SHOULD NOT offer `ipv4hint` and/or `ipv6hint` values within their
 published SVCB records as there may be security and usability implications to end-users
@@ -295,9 +298,9 @@ if a directory publishes and a client relies upon such hints.  (Consider that th
 protocol strongly ties host keys to FQDNs and/or IP addresses and will complain *loudly*
 if something changes in an unexpected manner.)
 
-Clients MAY use IP address hints provided in a SVCB record to avoid additional `A` or
-`AAAA` lookups when provided, but clients SHOULD consider the same user-facing security
-and usability impact described above, and clients MUST NOT require hints to be present.
+Clients MAY use IP address hints from a SVCB record to avoid additional `A` or `AAAA`
+lookups when provided, but clients SHOULD consider the same user-facing security and
+usability impact described above, and clients MUST NOT require hints to be present.
 
 
 #### Directory Service Information records
@@ -310,7 +313,7 @@ has already been discovered at the point that such records are queried.
 
 A _service information_ record may contain one or more of the following keys and
 associated data.  If the key-value pairs are too large for a single SPOD TXT record,
-a directory MAY use multiple SPOD TXT records, but MUST NOT repeat the same key in
+a directory MAY use multiple SPOD TXT records but it MUST NOT repeat the same key in
 more than one record.  Clients MUST accept zero or more _service information_ records
 and treat them as if they were a combined record consisting of the union of the key-value
 pairs found.
@@ -417,7 +420,7 @@ and the `d` key MUST be absent.
 
 A directory MAY present its service list using multiple SPOD TXT record(s), each
 containing a subset of the list under the `n` key.  Clients MUST accept multiple
-records and SHOULD treat them as if there was a single record containing the union
+records and SHOULD treat them as if they were a single record containing the union
 of all the names found under the `n` keys of any of the records.
 
 A very large directory MAY choose to split the names across additional FQDNs due
@@ -467,8 +470,8 @@ is a documentation example.)
 The above record types supply sufficient information to connect to "coolchat" if
 the user has a client that knows to use the `_spod.example.com` directory domain.
 But consider a user who discovered `coolchat.other.example.org` on a Web page or
-some other way, and has a client that is _not configured_ to use a SPOD directory
-_other than_ the one at `_spod.example.com`.
+some other way, and has a client that is _unaware_ of the `_spod.example.com`
+directory.
 
 The service can enable discovery of its directory information by adding a SPOD TXT
 record to its own host's FQDN record(s) outside of the directory:
