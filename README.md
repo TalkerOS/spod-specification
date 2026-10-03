@@ -144,20 +144,26 @@ Within this specification, a _client_ is a program running on an end-user device
 facilitates establishing connections to named services.  Establishing a connection often
 requires finding a fully-qualified domain name (FQDN) and ultimately an Internet protocol
 (IP) address, a designated port number, transport protocol (TCP or UDP), and an
-appropriate application layer protocl (Telnet, SSH, HTTPS, etc.).  Clients that are
-compliant with this specification MAY use a compliant _directory_ (see below) to ease
-the burden placed upon end users trying to connect to services.
+appropriate application layer protocl (Telnet, SSH, HTTPS, etc.).  It is assumed that
+a given client inherently knows which application layer protocol(s) it can facilitate
+and the technical details needed to do so.
+
+Clients that are compliant with this specification MAY use a compliant _directory_
+(see below) to ease the burden placed upon end users trying to connect to services.
 
 This specification is only concerned with discovering and communicating the necessary
 information to make a connection attempt possible.  The actual establishment of a
 connection through socket APIs, protocol negotiation, and subsequent interfacing with
-a remote service is not in scope.
+a remote service is not in scope.  It is not a goal of this specification to describe
+or instruct clients _how_ to use a protocol they do not already understand.
 
 
 ### Directory
 
 A _directory_ exists to index and assist the discovery of _services_ by _clients_
 and to inform clients of the necessary details to successfully connect to such services.
+It can be considered a programmatic equivalent to a friend's blog post or Web page with
+a list of their favorite sites and services along with corresponding connection details.
 A directory that is compliant with this specification is referred to as a _SPOD directory_.
 
 A directory is not assumed to itself run or host any of the services it lists, though
@@ -165,7 +171,7 @@ a directory operator MAY opt to do so.  A directory MAY contain entries for serv
 without the knowledge or consent of the operators of those services, similar to how any
 Web page may link to any other.  Well-behaved directories SHOULD take steps to prevent
 malicious or abusive listings, though how to accomplish this is outside the scope of
-this specification.
+this technical specification.
 
 Clients SHOULD NOT use information discovered from a directory for security-impacting
 decisions or functions without consent or acknowledgement from its end-user.  When a
@@ -241,8 +247,13 @@ whitespace.  Each key-value pair consists of an alphanumeric key, followed by th
 equals(=) symbol, followed by the value.
 
 TXT records acting as _SPOD version 1_ records under this specification MUST begin
-with the version key-pair `v=spod1`.  Any TXT record encountered that does not meet
-this requirement MUST be ignored as if it did not exist.
+with the version key-pair `v=spod1`.  DNS servers split TXT records whose values
+exceed 255 bytes into a sequence of individual strings on the wire format belonging
+to the same logical record; when this occurs the client or the receiving operating
+system MUST reassemble the string sequence into a single logical string value per
+TXT record. Any TXT record encountered that does not meet the version key-pair
+requirement MUST be ignored as if it did not exist.  If a FQDN returns multiple TXT
+records, each TXT record must be validated independently of any others.
 
 #### SPOD TXT record grammar
 
@@ -296,8 +307,7 @@ whitespace, no semicolon, and no characters outside US-ASCII.
 
 
 
-## Record types and purposes
-
+## Directory DNS record types and purposes
 
 ### Directory Domain record
 
@@ -468,11 +478,7 @@ records, information records MUST NOT include the `d` key since the directory do
 has already been discovered at the point that such records are queried.
 
 A _service information_ record may contain one or more of the following keys and
-associated data.  If the key-value pairs are too large for a single SPOD TXT record,
-a directory MAY use multiple SPOD TXT records but it MUST NOT repeat the same key in
-more than one record.  Clients MUST accept zero or more _service information_ records
-and treat them as if they were a combined record consisting of the union of the key-value
-pairs found.
+associated data.
 
 Informational keys:
 
@@ -502,19 +508,24 @@ Informational keys:
   words and/or international characters represented as UTF-8; values MUST NOT include
   double-quote(`"`) and SHOULD NOT include semicolon(`;`).
 
-- `p` (service login HTTPS URL path)
-  The path value MUST be a quoted value encoded to be URL-safe, and the path MUST be
-  absolute (begins with `/`) and point to the service entry point for new connections.
-  The path value MUST NOT include double-quote(`"`) and SHOULD NOT include semicolon(`;`).
-  It SHALL be used with any HTTPS-compatible `alpn` protocol(s) (`h2`, etc.) and used
-  only with the host authority resolved from the service's SVCB target value.  A path
-  value MAY contain a URL query component (`?` after all path components followed by
-  one or more URL key-value pairs) and/or a URL fragment (`#` after all path and any
-  query components, followed by one or more characters).  The entire path value MAY
-  contain up to ONE(1) occurrence of the (non-encoded) literal character sequence `%u`
-  as a placeholder to hint the user's login name (handle).  Before using the path value,
-  clients MUST look for the presence of the `%u` placeholder and, if found, substitute
-  the URL-safe encoding of the user's login name (if known) or else remove the
+- `p` (service login HTTPS URL path)  
+  The path value MUST be an absolute URI path (beginning with `/`) of the service's
+  entry endpoint for new connections.  This path SHALL be used with any HTTPS-compatible
+  `alpn` protocol(s) (`h2`, etc.) and used only with the host authority resolved from
+  the service's SVCB target FQDN.  The path value MAY include a URL query component
+  (`?` after all path components followed by one or more URL key-value pairs) and/or a
+  URL fragment component (`#` after all path and query components, followed by one or
+  more characters).  The entire path value MUST be UTF-8 encoded and then
+  percent-encoded according to RFC 3986, with the exception that up to ONE(1) occurrence
+  of a literal `%u` placeholder is not encoded and MAY optionally occur within the query
+  or fragment components to act as an optional hint of the user's login name (handle).
+  A `%u` placeholder MUST NOT appear in the path component itself.  When substituting
+  the placeholder, the client MUST first UTF-8 encode the user's login name (after any
+  normalization the client deems appropriate), then percent-encode it according to
+  RFC 3986 (treating % as a reserved character that must be encoded as %25), and finally
+  substitute the result in place of `%u`.  Before using the path value, clients MUST
+  look for the presence of the `%u` placeholder and, if found, perform the substitution
+  described above if the user's login name is known, or else it must remove the
   placeholder by substituting it with an empty string.
 
 - `s` (subject, topic, or theme)  
@@ -581,8 +592,8 @@ records and SHOULD treat them as if they were a single record containing the uni
 of all the names found under the `n` keys of any of the records.
 
 A very large directory MAY choose to split the names across additional FQDNs due
-to DNS packet size limitations.  If so, at least one of the SPOD TXT records at
-the special `_svc` prefix MUST include the key-value `next=_xxx` where `_xxx` is
+to DNS implementation considerations.  If so, at least one of the SPOD TXT records
+at the special `_svc` prefix MUST include the key-value `next=_xxx` where `_xxx` is
 replaced by another prefix of the directory's choosing.  The directory SHOULD choose
 a prefix that would not conflict or be confused with an actual service entry; for
 example, `_svc2`.  Clients that encounter the `next` key SHOULD query also for
@@ -592,10 +603,12 @@ the requirements of this section.  A directory using a `next` prefix MAY also us
 the `next` mechanism for additional values, if necessary.  Clients SHOULD continue
 to follow the `next` sequences to build a complete list of the service names;
 however, clients also SHOULD implement safeguards to prevent following too many
-`next` sequences.
+`next` sequences.  Directories MUST NOT cause cycles (loops) from the use of `next`
+sequences, and clients SHOULD track the FQDNs resolved and abort if a repeat is
+found or the count of distinct FQDNs reaches a client-defined upper limit.
 
 
-#### Service Address records
+### Service Address records
 
 The SVCB _directory service records_ point to the FQDN(s) of the host that provides
 the actual service.  These FQDNs MAY be within the same domain root as the SPOD
@@ -622,7 +635,9 @@ CNAME records without finding a publicly routable A or AAAA address record.
 is a documentation example.)
 
 
-#### Service Hint records
+## Optional service DNS record types and purposes
+
+### Service Hint records
 
 The above record types supply sufficient information to connect to "coolchat" if
 the user has a client that knows to use the `_spod.example.com` directory domain.
